@@ -1,6 +1,6 @@
 # Friedman Portal → Shulman Production Board
 
-The Friedman portal is a mandatory production-board source. Every submitted portal line item should become a separate production job while retaining a shared portal order ID.
+The Friedman portal is a mandatory production-board source. Every submitted portal line item becomes a separate production job while retaining a shared portal order ID.
 
 ## Source identity
 
@@ -11,11 +11,11 @@ The Friedman portal is a mandatory production-board source. Every submitted port
 
 ## Required production-board fields
 
-Each production job should provide:
+Each production job provides or is prepared to provide:
 
 - customer / restaurant / delivery location
 - requested by / received at / needed by
-- rush flag and priority
+- rush flag and production priority
 - job name / product / SKU / quantity
 - finished size / stock / sides / finish
 - artwork status and artwork filename
@@ -40,7 +40,7 @@ Use the same language in the portal, live production board, and printed producti
 7. Ready
 8. Complete
 
-Rush is an independent priority flag and should not replace the production status.
+Rush is an independent priority flag and does not replace the production status.
 
 ## Workflow rule
 
@@ -50,31 +50,58 @@ A line item may be visible on the master board immediately after order receipt, 
 
 Production recipes are workload estimates only. Customer pricing must come from the Shulman Paper & Printing Pricing Bible rather than from the workload recipe.
 
-Digital work should estimate:
+Digital work estimates:
 
 - sheets
 - clicks
 - machine minutes
 - finishing minutes
 
-Wide-format work should estimate:
+Wide-format work estimates:
 
 - square feet
 - machine minutes
 - finishing minutes
 
+The current recipe layer supports size-specific digital impositions so click/sheet estimates can vary by finished size.
+
+## Due-time priority
+
+The Netlify production-feed function adds:
+
+- `priority_score`
+- `priority_label`
+- `due_in_minutes`
+
+Rush adds a major priority weight, and jobs due within 48, 24, 12, or 4 hours receive progressively higher urgency. The master production board can sort on `priority_score` while still showing the normal status color.
+
 ## Current handoff
 
-The portal sends the full order payload to FileMaker when `window.FM.call` is available and also emits a browser event named `shulman:production-order`. The payload includes a `productionJobs` array ready for ingestion by a master production-board service.
+The portal currently has three handoff paths:
+
+1. FileMaker: when `window.FM.call` exists, the full payload is sent to the `Create Order` script.
+2. Browser event: the portal emits `shulman:production-order` with the same payload.
+3. Netlify Function: `src/productionBoardTransport.ts` forwards the browser event to `/.netlify/functions/submit-order`.
+
+The Netlify Function normalizes the Friedman source identity, adds due-time priority fields, and can forward the payload to the master board when these Netlify environment variables are configured:
+
+- `PRODUCTION_BOARD_INGEST_URL`
+- `PRODUCTION_BOARD_INGEST_TOKEN` (optional)
+
+Until an ingest URL is configured, the function accepts and validates the production payload but reports that master-board forwarding still requires configuration.
+
+## Order history
+
+Submitted order metadata is retained in browser local storage as a convenience for the current prototype. This is not a substitute for the authoritative backend order history.
 
 ## Backend work still required
 
-The current branch establishes the customer and production data contract. Before the portal becomes authoritative for unattended production-board ingestion, connect:
+Before the portal becomes authoritative for unattended production-board ingestion, connect:
 
 - real authentication and server-side restaurant authorization
-- durable order persistence
+- durable backend order persistence
 - real artwork storage/upload
 - real proof approval updates
 - real order history and status synchronization
-- master production-board ingestion endpoint / database
+- master production-board ingestion endpoint/database
 - Pricing Bible pricing service
