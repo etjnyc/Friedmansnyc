@@ -9,9 +9,13 @@ export function installProductionBoardTransport() {
     if (!payload) return;
 
     try {
+      const sessionToken = window.sessionStorage.getItem("friedmans_portal_session_token");
       const response = await fetch("/.netlify/functions/submit-order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+        },
         body: JSON.stringify(payload),
       });
 
