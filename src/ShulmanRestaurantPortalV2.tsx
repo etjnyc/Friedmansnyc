@@ -106,7 +106,7 @@ export default function ShulmanRestaurantPortalV2() {
   }, [user]);
 
   const activeRestaurant = RESTAURANTS.find((r) => r.id === activeRestaurantId) || RESTAURANTS[0];
-  const categories = Array.from(new Set(PRODUCTS.map((p) => p.category));
+  const categories = Array.from(new Set(PRODUCTS.map((p) => p.category)));
   const filteredProducts = PRODUCTS.filter((p) => p.category === category && p.name.toLowerCase().includes(query.toLowerCase()));
 
   const cartProduction = useMemo(() => {
