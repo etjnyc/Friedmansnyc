@@ -10,251 +10,25 @@ import {
   Label,
   Textarea,
 } from "@/components/ui";
+import {
+  buildProductionJobs,
+  CartItem,
+  estimateProduction,
+  initialStatus,
+  makeOrderId,
+  PortalUser,
+  Product,
+  PRODUCTS,
+  RESTAURANTS,
+  STATUS_STYLES,
+  SubmittedOrder,
+} from "./portalDomain";
 
-type PortalUser = {
-  id: string;
-  name: string;
-  role: "admin" | "end_user";
-  defaultRestaurantId?: string;
-  allowedRestaurantIds?: string[];
-};
-
-type ProductionMode = "digital" | "wide" | "other";
-
-type Product = {
-  id: string;
-  name: string;
-  category: string;
-  qbSku: string;
-  startingPrice: number;
-  sizes: string[];
-  stocks: string[];
-  finishes: string[];
-  recipe: {
-    mode: ProductionMode;
-    machine: string;
-    finishedPerSheet?: number;
-    wastePct?: number;
-    clicksPerMinute?: number;
-    setupMinutes: number;
-    squareFeetPerMinute?: number;
-    finishingMinutesPer100?: number;
-  };
-};
-
-type ProductionEstimate = {
-  machine: string;
-  estimatedSheets?: number;
-  estimatedClicks?: number;
-  estimatedSquareFeet?: number;
-  estimatedMachineMinutes: number;
-  estimatedFinishingMinutes: number;
-};
-
-type CartItem = {
-  productId: string;
-  qbSku: string;
-  name: string;
-  jobName: string;
-  quantity: number;
-  size: string;
-  stock: string;
-  finish: string;
-  doubleSided: boolean;
-  rush: boolean;
-  neededByDate: string;
-  neededByTime: string;
-  location: string;
-  packByStore: boolean;
-  proofRequired: boolean;
-  approverEmail?: string;
-  artworkMode: "existing" | "replacement";
-  artworkFileName?: string;
-  notes?: string;
-  production: ProductionEstimate;
-  startingPrice: number;
-};
-
-type SubmittedOrder = {
-  orderId: string;
-  createdAt: string;
-  status: string;
-  items: CartItem[];
-};
-
-const RESTAURANTS = [
-  { id: "suram-31-serano", name: "Suram 31 (Serano)", brand: "Suram", address: "132 W 31st St, New York, NY 10001" },
-  { id: "suram-31", name: "Suram 31", brand: "Suram", address: "132 W 31st St, New York, NY 10001" },
-  { id: "suram-61", name: "Suram 61", brand: "Suram", address: "21 West End Ave, New York, NY 10023" },
-  { id: "wu-nussbaum", name: "Wu & Nussbaum", brand: "Wu & Nussbaum", address: "2897 Broadway, New York, NY 10025" },
-  { id: "picka-vesey", name: "Pick-a-Bagel Vesey", brand: "Pick-a-Bagel", address: "251 Vesey St, New York, NY 10282" },
-  { id: "picka-37-west-end", name: "Pick-a-Bagel 37 West End", brand: "Pick-a-Bagel", address: "New York, NY" },
-  { id: "pq-uws", name: "Pastrami Queen – Upper West Side", brand: "Pastrami Queen", address: "138 W 72nd St, New York, NY" },
-  { id: "kossars-72", name: "Kossar’s West End 72nd", brand: "Kossar’s", address: "260 W 72nd St, New York, NY 10023" },
-];
-
-const PRODUCTS: Product[] = [
-  {
-    id: "menu-dine",
-    name: "Dine-In Menu",
-    category: "Menus",
-    qbSku: "MENU-DINE",
-    startingPrice: 129,
-    sizes: ["8.5×11", "8.5×14", "11×17"],
-    stocks: ["White Card Stock", "Cream Card Stock", "Synthetic 12 mil", "Flyer Paper"],
-    finishes: ["None"],
-    recipe: { mode: "digital", machine: "Canon imagePRESS V1000", finishedPerSheet: 1, wastePct: 0.03, clicksPerMinute: 80, setupMinutes: 8 },
-  },
-  {
-    id: "menu-togo",
-    name: "Takeout Menu",
-    category: "Menus",
-    qbSku: "MENU-TOGO",
-    startingPrice: 89,
-    sizes: ["8.5×11", "8.5×14"],
-    stocks: ["White Card Stock", "Cream Card Stock", "Synthetic 12 mil", "Flyer Paper"],
-    finishes: ["None", "Score & Fold"],
-    recipe: { mode: "digital", machine: "Canon imagePRESS V1000", finishedPerSheet: 1, wastePct: 0.03, clicksPerMinute: 80, setupMinutes: 8, finishingMinutesPer100: 3 },
-  },
-  {
-    id: "flyer-standard",
-    name: "Promo Flyers",
-    category: "Flyers",
-    qbSku: "FLYER-STD",
-    startingPrice: 49,
-    sizes: ["4×6", "5×7", "8.5×11"],
-    stocks: ["100# Gloss Cover", "100# Silk Cover", "80# Uncoated"],
-    finishes: ["No Coat", "AQ Coat", "UV Gloss"],
-    recipe: { mode: "digital", machine: "Canon imagePRESS V1000", finishedPerSheet: 4, wastePct: 0.03, clicksPerMinute: 80, setupMinutes: 8, finishingMinutesPer100: 2 },
-  },
-  {
-    id: "poster-large",
-    name: "Large Poster",
-    category: "Posters",
-    qbSku: "POSTER-LG",
-    startingPrice: 39,
-    sizes: ["12×18", "18×24", "24×36"],
-    stocks: ["Photo Paper", "Mounted to 3/16” white foam core", "Printed direct on 3mm PVC Plastic"],
-    finishes: ["No Laminate", "Matte Laminate", "Gloss Laminate"],
-    recipe: { mode: "wide", machine: "HP DesignJet Z5400", setupMinutes: 10, squareFeetPerMinute: 2.5, finishingMinutesPer100: 12 },
-  },
-  {
-    id: "banner-vinyl",
-    name: "Vinyl Banner",
-    category: "Banners",
-    qbSku: "BANNER-VNYL",
-    startingPrice: 59,
-    sizes: ["24×48", "36×72", "48×96"],
-    stocks: ["13oz Vinyl", "18oz Heavy Vinyl"],
-    finishes: ["Top corners", "All Corners", "Every 12\"", "Every 6\""],
-    recipe: { mode: "wide", machine: "HP DesignJet Z5400", setupMinutes: 10, squareFeetPerMinute: 2.2, finishingMinutesPer100: 15 },
-  },
-  {
-    id: "label-roll",
-    name: "Product Labels",
-    category: "Labels",
-    qbSku: "LABEL-ROLL",
-    startingPrice: 35,
-    sizes: ["2×2", "3×3", "3×5", "4×6"],
-    stocks: ["Paper Permanent", "Poly Waterproof", "Kraft"],
-    finishes: ["Matte", "Gloss"],
-    recipe: { mode: "other", machine: "Label workflow / assign at preflight", setupMinutes: 10, finishingMinutesPer100: 2 },
-  },
-  {
-    id: "tent-standard",
-    name: "Table Tents",
-    category: "Other",
-    qbSku: "TENT-STD",
-    startingPrice: 75,
-    sizes: ["4×6 (flat 4×12)", "5×7 (flat 5×14)"],
-    stocks: ["120# Cover Uncoated", "14pt C2S", "16pt C2S"],
-    finishes: ["Score & Fold", "Score Only"],
-    recipe: { mode: "digital", machine: "Canon imagePRESS V1000", finishedPerSheet: 2, wastePct: 0.04, clicksPerMinute: 70, setupMinutes: 10, finishingMinutesPer100: 5 },
-  },
-];
-
-const STATUS_STYLES: Record<string, string> = {
-  "Awaiting Artwork": "bg-amber-100 text-amber-900 border-amber-200",
-  "Awaiting Proof": "bg-yellow-100 text-yellow-900 border-yellow-200",
-  "Awaiting Approval": "bg-orange-100 text-orange-900 border-orange-200",
-  "Ready to Print": "bg-emerald-100 text-emerald-900 border-emerald-200",
-  Printing: "bg-blue-100 text-blue-900 border-blue-200",
-  Finishing: "bg-violet-100 text-violet-900 border-violet-200",
-  Ready: "bg-teal-100 text-teal-900 border-teal-200",
-  Complete: "bg-slate-200 text-slate-800 border-slate-300",
-};
-
-function parseDimensions(size: string) {
-  const match = size.match(/(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/i);
-  if (!match) return null;
-  return { width: Number(match[1]), height: Number(match[2]) };
-}
-
-function estimateProduction(product: Product, qty: number, size: string, doubleSided: boolean): ProductionEstimate {
-  const safeQty = Math.max(1, qty || 1);
-  const recipe = product.recipe;
-  const finishingMinutes = Math.ceil(((recipe.finishingMinutesPer100 || 0) * safeQty) / 100);
-
-  if (recipe.mode === "digital") {
-    const ups = Math.max(1, recipe.finishedPerSheet || 1);
-    const waste = 1 + (recipe.wastePct || 0);
-    const sheets = Math.ceil((safeQty / ups) * waste);
-    const sides = doubleSided ? 2 : 1;
-    const clicks = sheets * sides;
-    const machineMinutes = Math.ceil(recipe.setupMinutes + clicks / Math.max(1, recipe.clicksPerMinute || 60));
-    return {
-      machine: recipe.machine,
-      estimatedSheets: sheets,
-      estimatedClicks: clicks,
-      estimatedMachineMinutes: machineMinutes,
-      estimatedFinishingMinutes: finishingMinutes,
-    };
-  }
-
-  if (recipe.mode === "wide") {
-    const dimensions = parseDimensions(size);
-    const squareFeet = dimensions ? (dimensions.width * dimensions.height * safeQty) / 144 : 0;
-    const machineMinutes = Math.ceil(recipe.setupMinutes + squareFeet / Math.max(0.1, recipe.squareFeetPerMinute || 1));
-    return {
-      machine: recipe.machine,
-      estimatedSquareFeet: Math.round(squareFeet * 10) / 10,
-      estimatedMachineMinutes: machineMinutes,
-      estimatedFinishingMinutes: finishingMinutes,
-    };
-  }
-
-  return {
-    machine: recipe.machine,
-    estimatedMachineMinutes: recipe.setupMinutes,
-    estimatedFinishingMinutes: finishingMinutes,
-  };
-}
-
-function formatMoney(amount: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
-}
-
-function makeOrderId() {
-  const d = new Date();
-  const stamp = [
-    String(d.getFullYear()).slice(2),
-    String(d.getMonth() + 1).padStart(2, "0"),
-    String(d.getDate()).padStart(2, "0"),
-    String(d.getHours()).padStart(2, "0"),
-    String(d.getMinutes()).padStart(2, "0"),
-    String(d.getSeconds()).padStart(2, "0"),
-  ].join("");
-  return `FRD-${stamp}`;
-}
-
-function initialStatus(item: CartItem) {
-  if (item.artworkMode === "replacement" && !item.artworkFileName) return "Awaiting Artwork";
-  if (item.proofRequired) return "Awaiting Proof";
-  return "Ready to Print";
-}
+const ORDER_STORAGE_KEY = "friedmans_portal_orders_v2";
 
 function StatusPill({ status }: { status: string }) {
-  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[status] || STATUS_STYLES.Complete}`}>{status}</span>;
+  const style = STATUS_STYLES[status] || STATUS_STYLES.Complete;
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${style}`}>{status}</span>;
 }
 
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
@@ -277,6 +51,24 @@ export default function ShulmanRestaurantPortalV2() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [submittedOrders, setSubmittedOrders] = useState<SubmittedOrder[]>([]);
   const [lastSubmittedId, setLastSubmittedId] = useState<string | null>(null);
+  const [feedMessage, setFeedMessage] = useState<string>("");
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(ORDER_STORAGE_KEY);
+      if (stored) setSubmittedOrders(JSON.parse(stored));
+    } catch {
+      // Local history is a convenience only; backend history remains authoritative once connected.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(submittedOrders.slice(0, 50)));
+    } catch {
+      // Do not block ordering if local storage is unavailable.
+    }
+  }, [submittedOrders]);
 
   useEffect(() => {
     function onFM(ev: Event) {
@@ -288,8 +80,24 @@ export default function ShulmanRestaurantPortalV2() {
       setActiveRestaurantId(nextUser.defaultRestaurantId || nextUser.allowedRestaurantIds?.[0] || RESTAURANTS[0].id);
       setLoggedIn(true);
     }
+
+    function onFeedResult(ev: Event) {
+      const detail = (ev as CustomEvent).detail || {};
+      if (detail.ok && detail.result?.forwarded) {
+        setFeedMessage("Production feed accepted and forwarded to the master board endpoint.");
+      } else if (detail.ok && detail.result?.configurationRequired) {
+        setFeedMessage("Order payload accepted. Master-board endpoint still needs Netlify environment configuration.");
+      } else if (!detail.ok) {
+        setFeedMessage("Order was created locally/FileMaker-side, but the production-feed handoff reported an error.");
+      }
+    }
+
     window.addEventListener("fm:receive", onFM);
-    return () => window.removeEventListener("fm:receive", onFM);
+    window.addEventListener("shulman:production-order-result", onFeedResult);
+    return () => {
+      window.removeEventListener("fm:receive", onFM);
+      window.removeEventListener("shulman:production-order-result", onFeedResult);
+    };
   }, []);
 
   const allowedRestaurants = useMemo(() => {
@@ -298,7 +106,7 @@ export default function ShulmanRestaurantPortalV2() {
   }, [user]);
 
   const activeRestaurant = RESTAURANTS.find((r) => r.id === activeRestaurantId) || RESTAURANTS[0];
-  const categories = Array.from(new Set(PRODUCTS.map((p) => p.category)));
+  const categories = Array.from(new Set(PRODUCTS.map((p) => p.category));
   const filteredProducts = PRODUCTS.filter((p) => p.category === category && p.name.toLowerCase().includes(query.toLowerCase()));
 
   const cartProduction = useMemo(() => {
@@ -319,43 +127,12 @@ export default function ShulmanRestaurantPortalV2() {
     if (!cart.length) return;
     const orderId = makeOrderId();
     const createdAt = new Date().toISOString();
-    const productionJobs = cart.map((item, index) => ({
-      source: "Friedmans Portal",
-      source_system: "friedmans_portal",
-      source_order_id: orderId,
-      job_id: `${orderId}-${String(index + 1).padStart(2, "0")}`,
-      customer: activeRestaurant.brand,
-      restaurant: activeRestaurant.name,
-      delivery_location: item.location,
-      requested_by: user.name,
-      received_at: createdAt,
-      needed_by: item.neededByDate ? `${item.neededByDate}${item.neededByTime ? `T${item.neededByTime}` : ""}` : null,
-      rush: item.rush,
-      job_name: item.jobName,
-      product: item.name,
-      sku: item.qbSku,
-      quantity: item.quantity,
-      finished_size: item.size,
-      stock: item.stock,
-      sides: item.doubleSided ? 2 : 1,
-      finish: item.finish,
-      artwork_status: item.artworkMode === "existing" ? "On file" : item.artworkFileName ? "Replacement selected" : "Missing",
-      artwork_file_name: item.artworkFileName || null,
-      proof_required: item.proofRequired,
-      proof_status: item.proofRequired ? "Required" : "Not required",
-      approver_email: item.proofRequired ? item.approverEmail || null : null,
-      estimated_clicks: item.production.estimatedClicks || 0,
-      estimated_sheets: item.production.estimatedSheets || 0,
-      estimated_square_feet: item.production.estimatedSquareFeet || 0,
-      estimated_machine_minutes: item.production.estimatedMachineMinutes,
-      machine: item.production.machine,
-      estimated_finishing_minutes: item.production.estimatedFinishingMinutes,
-      pack_by_store: item.packByStore,
-      production_notes: item.notes || "",
-      status: initialStatus(item),
-      priority: item.rush ? "RUSH" : "STANDARD",
-      last_updated: createdAt,
-    }));
+    const productionJobs = buildProductionJobs(cart, orderId, createdAt, user, activeRestaurant);
+    const status = productionJobs.some((j) => j.status === "Awaiting Artwork")
+      ? "Awaiting Artwork"
+      : productionJobs.some((j) => j.status === "Awaiting Proof")
+        ? "Awaiting Proof"
+        : "Ready to Print";
 
     const payload = {
       source: "Friedmans Portal",
@@ -373,36 +150,15 @@ export default function ShulmanRestaurantPortalV2() {
     if (fm?.call) fm.call("Create Order", payload);
     window.dispatchEvent(new CustomEvent("shulman:production-order", { detail: payload }));
 
-    setSubmittedOrders((prev) => [{ orderId, createdAt, status: productionJobs.some((j) => j.status === "Awaiting Artwork") ? "Awaiting Artwork" : productionJobs.some((j) => j.status === "Awaiting Proof") ? "Awaiting Proof" : "Ready to Print", items: cart }, ...prev]);
+    setSubmittedOrders((prev) => [{ orderId, createdAt, status, items: cart }, ...prev]);
     setLastSubmittedId(orderId);
+    setFeedMessage("Sending production-ready line items to the production feed…");
     setCart([]);
     setTab("orders");
   }
 
   if (!loggedIn) {
-    return (
-      <div className="min-h-screen bg-slate-50 px-4 py-16 text-slate-900">
-        <div className="mx-auto max-w-md">
-          <div className="mb-8 text-center">
-            <div className="text-2xl font-bold tracking-tight">SHULMAN PAPER</div>
-            <div className="mt-1 text-sm text-slate-500">Restaurant Print Ordering</div>
-          </div>
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>Welcome back</CardTitle>
-              <CardDescription>FileMaker users can be signed in automatically. Demo sign-in remains available while production authentication is connected.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Label>Email</Label>
-              <Input placeholder="you@restaurant.com" />
-              <Label>Password</Label>
-              <Input type="password" placeholder="••••••••" />
-              <Button className="mt-2 w-full" onClick={() => setLoggedIn(true)}>Demo sign in</Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
+    return <AuthGate onSignIn={() => setLoggedIn(true)} />;
   }
 
   return (
@@ -428,32 +184,15 @@ export default function ShulmanRestaurantPortalV2() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 pb-32">
-        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Ordering for</div>
-              <h1 className="mt-1 text-2xl font-bold">{activeRestaurant.name}</h1>
-              <p className="mt-1 text-sm text-slate-500">{activeRestaurant.address}</p>
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-xl bg-orange-50 px-4 py-3"><div className="text-xl font-bold text-orange-900">1</div><div className="text-xs text-orange-700">Awaiting Proof</div></div>
-              <div className="rounded-xl bg-blue-50 px-4 py-3"><div className="text-xl font-bold text-blue-900">2</div><div className="text-xs text-blue-700">In Production</div></div>
-              <div className="rounded-xl bg-emerald-50 px-4 py-3"><div className="text-xl font-bold text-emerald-900">3</div><div className="text-xs text-emerald-700">Ready / Recent</div></div>
-            </div>
-          </div>
-        </section>
-
-        <nav className="mb-6 grid grid-cols-4 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-          {(["order", "orders", "production", "account"] as const).map((value) => (
-            <button key={value} onClick={() => setTab(value)} className={`rounded-lg px-3 py-2 text-sm font-medium capitalize ${tab === value ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{value === "orders" ? "My Orders" : value === "production" ? "Production View" : value}</button>
-          ))}
-        </nav>
+        <Dashboard restaurantName={activeRestaurant.name} address={activeRestaurant.address} />
+        <TabNav tab={tab} setTab={setTab} />
 
         {tab === "order" && (
           <div className="space-y-6">
             <section>
-              <div className="mb-3 flex items-end justify-between">
-                <div><h2 className="text-lg font-semibold">Quick Reorder</h2><p className="text-sm text-slate-500">Start from the jobs your restaurants order most often.</p></div>
+              <div className="mb-3">
+                <h2 className="text-lg font-semibold">Quick Reorder</h2>
+                <p className="text-sm text-slate-500">Start from the jobs your restaurants order most often.</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {PRODUCTS.slice(0, 4).map((p) => (
@@ -468,7 +207,10 @@ export default function ShulmanRestaurantPortalV2() {
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div><h2 className="text-lg font-semibold">Start a New Order</h2><p className="text-sm text-slate-500">Every line item becomes its own production-board job while staying linked to one portal order.</p></div>
+                <div>
+                  <h2 className="text-lg font-semibold">Start a New Order</h2>
+                  <p className="text-sm text-slate-500">Every line item becomes its own production-board job while staying linked to one portal order.</p>
+                </div>
                 <Input className="lg:w-72" placeholder="Search products" value={query} onChange={(e) => setQuery(e.target.value)} />
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -477,9 +219,12 @@ export default function ShulmanRestaurantPortalV2() {
               <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {filteredProducts.map((p) => (
                   <Card key={p.id} className="shadow-sm">
-                    <CardHeader><CardTitle className="text-base">{p.name}</CardTitle><CardDescription>SKU {p.qbSku} • Starting at {formatMoney(p.startingPrice)}</CardDescription></CardHeader>
+                    <CardHeader>
+                      <CardTitle className="text-base">{p.name}</CardTitle>
+                      <CardDescription>SKU {p.qbSku} • Pricing from Shulman Pricing Bible</CardDescription>
+                    </CardHeader>
                     <CardContent>
-                      <div className="text-sm text-slate-500">Primary route: {p.recipe.machine}</div>
+                      <div className="text-sm text-slate-500">Primary production route: {p.recipe.machine}</div>
                       <Button className="w-full" onClick={() => setConfiguring(p)}>Configure</Button>
                     </CardContent>
                   </Card>
@@ -492,9 +237,12 @@ export default function ShulmanRestaurantPortalV2() {
         {tab === "orders" && (
           <section className="space-y-4">
             {lastSubmittedId && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>{lastSubmittedId}</strong> was converted into production-board-ready line items.</div>}
+            {feedMessage && <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">{feedMessage}</div>}
             <OrderCard orderId="FRD-260812-1045" date="Today, 9:17 AM" name="Takeout Menus" status="Printing" />
             <OrderCard orderId="FRD-260812-1041" date="Today, 8:42 AM" name="Table Tents" status="Awaiting Approval" />
-            {submittedOrders.map((order) => <OrderCard key={order.orderId} orderId={order.orderId} date={new Date(order.createdAt).toLocaleString()} name={order.items.map((i) => i.jobName).join(", ")} status={order.status} />)}
+            {submittedOrders.map((order) => (
+              <OrderCard key={order.orderId} orderId={order.orderId} date={new Date(order.createdAt).toLocaleString()} name={order.items.map((i) => i.jobName).join(", ")} status={order.status} />
+            ))}
           </section>
         )}
 
@@ -508,7 +256,10 @@ export default function ShulmanRestaurantPortalV2() {
               <Metric label="Finishing Min" value={cartProduction.finishingMinutes} />
             </div>
             <Card className="shadow-sm">
-              <CardHeader><CardTitle>Production-board feed preview</CardTitle><CardDescription>These are the fields that will leave the portal with every submitted line item.</CardDescription></CardHeader>
+              <CardHeader>
+                <CardTitle>Production-board feed preview</CardTitle>
+                <CardDescription>Workload estimates are operational only. Pricing remains separate and must come from the Pricing Bible.</CardDescription>
+              </CardHeader>
               <CardContent>
                 {!cart.length ? <p className="text-sm text-slate-500">Configure an item to preview production data.</p> : cart.map((item, i) => <ProductionPreview key={`${item.productId}-${i}`} item={item} />)}
               </CardContent>
@@ -516,35 +267,100 @@ export default function ShulmanRestaurantPortalV2() {
           </section>
         )}
 
-        {tab === "account" && (
-          <Card className="shadow-sm">
-            <CardHeader><CardTitle>Account & Workflow Defaults</CardTitle><CardDescription>Defaults used for proofing, packing, and production routing.</CardDescription></CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div><Label>Default approver email</Label><Input defaultValue="ops@brand.com" /></div>
-              <div><Label>Default delivery location</Label><Input defaultValue={`${activeRestaurant.name} — ${activeRestaurant.address}`} /></div>
-              <div className="md:col-span-2"><Label>Standing production notes</Label><Textarea rows={3} placeholder="Packing, labeling, delivery, or recurring production instructions" /></div>
-            </CardContent>
-          </Card>
-        )}
+        {tab === "account" && <AccountPanel restaurantName={activeRestaurant.name} address={activeRestaurant.address} />}
       </main>
 
       {cart.length > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur">
           <div className="mx-auto flex max-w-7xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="text-sm"><span className="font-semibold">{cart.length} production job{cart.length === 1 ? "" : "s"}</span><span className="ml-3 text-slate-500">{cartProduction.clicks ? `${cartProduction.clicks.toLocaleString()} est. clicks` : `${cartProduction.squareFeet.toFixed(1)} est. sq ft`} • {cartProduction.machineMinutes} machine min</span></div>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => setCart([])}>Clear</Button><Button onClick={placeOrder}>Place Order & Send to Production Feed</Button></div>
+            <div className="text-sm">
+              <span className="font-semibold">{cart.length} production job{cart.length === 1 ? "" : "s"}</span>
+              <span className="ml-3 text-slate-500">{cartProduction.clicks ? `${cartProduction.clicks.toLocaleString()} est. clicks` : `${cartProduction.squareFeet.toFixed(1)} est. sq ft`} • {cartProduction.machineMinutes} machine min</span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setCart([])}>Clear</Button>
+              <Button onClick={placeOrder}>Place Order & Send to Production Feed</Button>
+            </div>
           </div>
         </div>
       )}
 
-      {configuring && <Configurator product={configuring} location={`${activeRestaurant.name} — ${activeRestaurant.address}`} onClose={() => setConfiguring(null)} onAdd={(item) => { setCart((prev) => [...prev, item]); setConfiguring(null); }} />}
+      {configuring && (
+        <Configurator
+          product={configuring}
+          location={`${activeRestaurant.name} — ${activeRestaurant.address}`}
+          onClose={() => setConfiguring(null)}
+          onAdd={(item) => {
+            setCart((prev) => [...prev, item]);
+            setConfiguring(null);
+            setTab("production");
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function AuthGate({ onSignIn }: { onSignIn: () => void }) {
+  return (
+    <div className="min-h-screen bg-slate-50 px-4 py-16 text-slate-900">
+      <div className="mx-auto max-w-md">
+        <div className="mb-8 text-center">
+          <div className="text-2xl font-bold tracking-tight">SHULMAN PAPER</div>
+          <div className="mt-1 text-sm text-slate-500">Restaurant Print Ordering</div>
+        </div>
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>Welcome back</CardTitle>
+            <CardDescription>FileMaker users can be signed in automatically. Demo sign-in remains available while production authentication is connected.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Label>Email</Label>
+            <Input placeholder="you@restaurant.com" />
+            <Label>Password</Label>
+            <Input type="password" placeholder="••••••••" />
+            <Button className="mt-2 w-full" onClick={onSignIn}>Demo sign in</Button>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ restaurantName, address }: { restaurantName: string; address: string }) {
+  return (
+    <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Ordering for</div>
+          <h1 className="mt-1 text-2xl font-bold">{restaurantName}</h1>
+          <p className="mt-1 text-sm text-slate-500">{address}</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl bg-orange-50 px-4 py-3"><div className="text-xl font-bold text-orange-900">1</div><div className="text-xs text-orange-700">Awaiting Proof</div></div>
+          <div className="rounded-xl bg-blue-50 px-4 py-3"><div className="text-xl font-bold text-blue-900">2</div><div className="text-xs text-blue-700">In Production</div></div>
+          <div className="rounded-xl bg-emerald-50 px-4 py-3"><div className="text-xl font-bold text-emerald-900">3</div><div className="text-xs text-emerald-700">Ready / Recent</div></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TabNav({ tab, setTab }: { tab: "order" | "orders" | "production" | "account"; setTab: (tab: "order" | "orders" | "production" | "account") => void }) {
+  return (
+    <nav className="mb-6 grid grid-cols-4 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+      {(["order", "orders", "production", "account"] as const).map((value) => (
+        <button key={value} onClick={() => setTab(value)} className={`rounded-lg px-3 py-2 text-sm font-medium capitalize ${tab === value ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+          {value === "orders" ? "My Orders" : value === "production" ? "Production View" : value}
+        </button>
+      ))}
+    </nav>
   );
 }
 
 function OrderCard({ orderId, date, name, status }: { orderId: string; date: string; name: string; status: string }) {
   const steps = ["Order Received", "Artwork", "Proof", "Approved", "Printing", "Finishing", "Ready"];
-  const activeIndex = status === "Printing" ? 4 : status === "Awaiting Approval" ? 2 : status === "Ready" ? 6 : 1;
+  const activeIndex = status === "Printing" ? 4 : status === "Awaiting Approval" ? 2 : status === "Ready" ? 6 : status === "Ready to Print" ? 3 : 1;
   return (
     <Card className="shadow-sm">
       <CardContent className="p-5">
@@ -563,16 +379,32 @@ function OrderCard({ orderId, date, name, status }: { orderId: string; date: str
 function ProductionPreview({ item }: { item: CartItem }) {
   return (
     <div className="rounded-xl border border-slate-200 p-4">
-      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div><div className="font-semibold">{item.jobName}</div><div className="text-xs text-slate-500">{item.quantity} • {item.size} • {item.stock} • {item.doubleSided ? "2-sided" : "1-sided"}</div></div><StatusPill status={initialStatus(item)} /></div>
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <div><div className="font-semibold">{item.jobName}</div><div className="text-xs text-slate-500">{item.quantity} • {item.size} • {item.stock} • {item.doubleSided ? "2-sided" : "1-sided"}</div></div>
+        <StatusPill status={initialStatus(item)} />
+      </div>
       <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3 lg:grid-cols-6">
-        <div><strong>Machine:</strong><br />{item.production.machine}</div>
-        <div><strong>Clicks:</strong><br />{item.production.estimatedClicks || "—"}</div>
-        <div><strong>Sheets:</strong><br />{item.production.estimatedSheets || "—"}</div>
-        <div><strong>Sq ft:</strong><br />{item.production.estimatedSquareFeet || "—"}</div>
-        <div><strong>Machine:</strong><br />{item.production.estimatedMachineMinutes} min</div>
-        <div><strong>Finishing:</strong><br />{item.production.estimatedFinishingMinutes} min</div>
+        <Mini label="Machine" value={item.production.machine} />
+        <Mini label="Clicks" value={item.production.estimatedClicks || "—"} />
+        <Mini label="Sheets" value={item.production.estimatedSheets || "—"} />
+        <Mini label="Sq ft" value={item.production.estimatedSquareFeet || "—"} />
+        <Mini label="Machine time" value={`${item.production.estimatedMachineMinutes} min`} />
+        <Mini label="Finishing" value={`${item.production.estimatedFinishingMinutes} min`} />
       </div>
     </div>
+  );
+}
+
+function AccountPanel({ restaurantName, address }: { restaurantName: string; address: string }) {
+  return (
+    <Card className="shadow-sm">
+      <CardHeader><CardTitle>Account & Workflow Defaults</CardTitle><CardDescription>Defaults used for proofing, packing, and production routing.</CardDescription></CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-2">
+        <div><Label>Default approver email</Label><Input defaultValue="ops@brand.com" /></div>
+        <div><Label>Default delivery location</Label><Input defaultValue={`${restaurantName} — ${address}`} /></div>
+        <div className="md:col-span-2"><Label>Standing production notes</Label><Textarea rows={3} placeholder="Packing, labeling, delivery, or recurring production instructions" /></div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -598,7 +430,10 @@ function Configurator({ product, location, onClose, onAdd }: { product: Product;
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4">
       <div className="mx-auto my-4 max-w-4xl rounded-2xl bg-white shadow-2xl">
-        <div className="border-b border-slate-200 p-5"><h2 className="text-xl font-bold">Configure {product.name}</h2><p className="mt-1 text-sm text-slate-500">Production-ready fields are captured now so the production board does not have to reinterpret the order later.</p></div>
+        <div className="border-b border-slate-200 p-5">
+          <h2 className="text-xl font-bold">Configure {product.name}</h2>
+          <p className="mt-1 text-sm text-slate-500">Production-ready fields are captured now so the production board does not have to reinterpret the order later.</p>
+        </div>
         <div className="grid gap-5 p-5 md:grid-cols-2">
           <Field label="Job Name / Reference"><Input value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="Fall Dinner Menu" /></Field>
           <Field label="Quantity"><Input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value || 0))} /></Field>
@@ -632,12 +467,15 @@ function Configurator({ product, location, onClose, onAdd }: { product: Product;
               <Mini label="Machine time" value={`${production.estimatedMachineMinutes} min`} />
               <Mini label="Finishing" value={`${production.estimatedFinishingMinutes} min`} />
             </div>
-            <p className="mt-3 text-xs text-slate-500">These are workload estimates, not customer pricing. Final pricing should come from the Shulman pricing bible.</p>
+            <p className="mt-3 text-xs text-slate-500">Workload estimates only. Customer pricing must be supplied by the Shulman Pricing Bible.</p>
           </div>
         </div>
         <div className="flex items-center justify-between border-t border-slate-200 p-5">
-          <div className="text-xs text-slate-500">Required before adding: job name, quantity, needed-by date, artwork readiness, and proof approver when applicable.</div>
-          <div className="flex gap-2"><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!valid} onClick={() => onAdd({ productId: product.id, qbSku: product.qbSku, name: product.name, jobName: jobName.trim(), quantity: qty, size, stock, finish, doubleSided, rush, neededByDate, neededByTime, location, packByStore, proofRequired, approverEmail: proofRequired ? approverEmail : undefined, artworkMode, artworkFileName, notes, production, startingPrice: product.startingPrice })}>Add Production Job</Button></div>
+          <div className="text-xs text-slate-500">Required: job name, quantity, needed-by date, artwork readiness, and proof approver when applicable.</div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button disabled={!valid} onClick={() => onAdd({ productId: product.id, qbSku: product.qbSku, name: product.name, jobName: jobName.trim(), quantity: qty, size, stock, finish, doubleSided, rush, neededByDate, neededByTime, location, packByStore, proofRequired, approverEmail: proofRequired ? approverEmail : undefined, artworkMode, artworkFileName, notes, production })}>Add Production Job</Button>
+          </div>
         </div>
       </div>
     </div>
