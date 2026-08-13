@@ -1,5 +1,17 @@
 const crypto = require("crypto");
 
+const STANDALONE_TEST_RECORD = {
+  loginId: "shulman-test",
+  restaurantId: "casa-louie",
+  salt: "Na92fhgUYff4DBy3XpiWlw==",
+  hash: "8ozD5ZpAjkBzH7F2u09aR5UauJm5WbgqENG7NZmLBvn02B1OueDaSiU+gWVguRGEvpZ854TpPCUJ82LyUr/nJQ==",
+  role: "admin",
+};
+
+// This key signs only the temporary standalone-test session. It does not grant
+// access to a production-board endpoint because production transport is disabled.
+const STANDALONE_TEST_SESSION_SECRET = "friedmans-standalone-design-test-2026-08";
+
 function json(statusCode, body, extraHeaders = {}) {
   return {
     statusCode,
@@ -12,12 +24,14 @@ function json(statusCode, body, extraHeaders = {}) {
   };
 }
 
-function signSession(record) {
-  const secret = process.env.RESTAURANT_SESSION_SECRET;
+function signSession(record, standaloneTest = false) {
+  const secret = standaloneTest ? STANDALONE_TEST_SESSION_SECRET : process.env.RESTAURANT_SESSION_SECRET;
   if (!secret) return null;
   const payload = {
     restaurantId: record.restaurantId,
     loginId: record.loginId,
+    role: record.role || "end_user",
+    mode: standaloneTest ? "standalone-test" : "restaurant",
     exp: Date.now() + 12 * 60 * 60 * 1000,
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -42,18 +56,20 @@ exports.handler = async function handler(event) {
   if (!loginId || !password) return json(400, { error: "Login ID and password are required" });
 
   const rawCredentials = process.env.RESTAURANT_CREDENTIALS_JSON;
-  if (!rawCredentials) {
-    return json(503, { error: "Restaurant authentication has not been configured on this deployment" });
-  }
-
   let credentials;
-  try {
-    credentials = JSON.parse(rawCredentials);
-  } catch {
-    return json(500, { error: "Restaurant authentication configuration is invalid" });
-  }
+  let standaloneTest = false;
 
-  if (!Array.isArray(credentials)) return json(500, { error: "Restaurant authentication configuration is invalid" });
+  if (!rawCredentials) {
+    credentials = [STANDALONE_TEST_RECORD];
+    standaloneTest = true;
+  } else {
+    try {
+      credentials = JSON.parse(rawCredentials);
+    } catch {
+      return json(500, { error: "Restaurant authentication configuration is invalid" });
+    }
+    if (!Array.isArray(credentials)) return json(500, { error: "Restaurant authentication configuration is invalid" });
+  }
 
   const record = credentials.find((entry) => String(entry.loginId || "").toLowerCase() === loginId);
   if (!record?.salt || !record?.hash || !record?.restaurantId) {
@@ -76,18 +92,20 @@ exports.handler = async function handler(event) {
     return json(401, { error: "Invalid login ID or password" });
   }
 
-  const sessionToken = signSession(record);
+  const sessionToken = signSession(record, standaloneTest);
   if (!sessionToken) return json(503, { error: "Restaurant session signing has not been configured on this deployment" });
 
+  const role = standaloneTest ? "admin" : (record.role || "end_user");
   return json(200, {
     ok: true,
+    standaloneTest,
     sessionToken,
     user: {
-      id: `restaurant:${record.restaurantId}`,
-      name: record.loginId,
-      role: "end_user",
+      id: standaloneTest ? "portal:standalone-test" : `restaurant:${record.restaurantId}`,
+      name: standaloneTest ? "Shulman Portal Tester" : record.loginId,
+      role,
       defaultRestaurantId: record.restaurantId,
-      allowedRestaurantIds: [record.restaurantId],
+      allowedRestaurantIds: role === "admin" ? [] : [record.restaurantId],
     },
   });
 };
