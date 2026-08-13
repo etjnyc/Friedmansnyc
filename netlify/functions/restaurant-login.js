@@ -12,6 +12,19 @@ function json(statusCode, body, extraHeaders = {}) {
   };
 }
 
+function signSession(record) {
+  const secret = process.env.RESTAURANT_SESSION_SECRET;
+  if (!secret) return null;
+  const payload = {
+    restaurantId: record.restaurantId,
+    loginId: record.loginId,
+    exp: Date.now() + 12 * 60 * 60 * 1000,
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", secret).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
 exports.handler = async function handler(event) {
   if (event.httpMethod !== "POST") {
     return json(405, { error: "Method not allowed" }, { Allow: "POST" });
@@ -63,8 +76,12 @@ exports.handler = async function handler(event) {
     return json(401, { error: "Invalid login ID or password" });
   }
 
+  const sessionToken = signSession(record);
+  if (!sessionToken) return json(503, { error: "Restaurant session signing has not been configured on this deployment" });
+
   return json(200, {
     ok: true,
+    sessionToken,
     user: {
       id: `restaurant:${record.restaurantId}`,
       name: record.loginId,
