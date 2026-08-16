@@ -1,3 +1,17 @@
+const FORWARD_TIMEOUT_MS = 8000;
+
+function json(statusCode, body, extraHeaders = {}) {
+  return {
+    statusCode,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...extraHeaders,
+    },
+    body: JSON.stringify(body),
+  };
+}
+
 function minutesUntil(neededBy) {
   if (!neededBy) return null;
   const target = Date.parse(neededBy);
@@ -21,32 +35,39 @@ function priorityFor(job) {
   return { score, label, dueInMinutes };
 }
 
+async function forwardOrder(ingestUrl, ingestToken, normalizedPayload) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FORWARD_TIMEOUT_MS);
+
+  try {
+    return await fetch(ingestUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(ingestToken ? { Authorization: `Bearer ${ingestToken}` } : {}),
+      },
+      body: JSON.stringify(normalizedPayload),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 exports.handler = async function handler(event) {
   if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
-      headers: { Allow: "POST", "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Method not allowed" }),
-    };
+    return json(405, { error: "Method not allowed" }, { Allow: "POST" });
   }
 
   let payload;
   try {
     payload = JSON.parse(event.body || "{}");
   } catch {
-    return {
-      statusCode: 400,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Invalid JSON" }),
-    };
+    return json(400, { error: "Invalid JSON" });
   }
 
   if (payload.source_system !== "friedmans_portal" || !Array.isArray(payload.productionJobs) || !payload.productionJobs.length) {
-    return {
-      statusCode: 400,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "A Friedman portal payload with productionJobs is required" }),
-    };
+    return json(400, { error: "A Friedman portal payload with productionJobs is required" });
   }
 
   const receivedAt = new Date().toISOString();
@@ -78,41 +99,33 @@ exports.handler = async function handler(event) {
 
   if (ingestUrl) {
     try {
-      const response = await fetch(ingestUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(ingestToken ? { Authorization: `Bearer ${ingestToken}` } : {}),
-        },
-        body: JSON.stringify(normalizedPayload),
-      });
+      const response = await forwardOrder(ingestUrl, ingestToken, normalizedPayload);
       forwarded = response.ok;
       upstreamStatus = response.status;
     } catch (error) {
-      return {
-        statusCode: 502,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accepted: true,
-          forwarded: false,
-          error: error instanceof Error ? error.message : "Production-board forwarding failed",
-          orderId: payload.orderId,
-          productionJobs,
-        }),
-      };
+      const timedOut = error?.name === "AbortError";
+      return json(502, {
+        accepted: true,
+        forwarded: false,
+        error: timedOut
+          ? `Production-board forwarding exceeded ${FORWARD_TIMEOUT_MS / 1000} seconds`
+          : error instanceof Error
+          ? error.message
+          : "Production-board forwarding failed",
+        orderId: payload.orderId,
+        jobCount: productionJobs.length,
+      });
     }
   }
 
-  return {
-    statusCode: forwarded ? 202 : 200,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      accepted: true,
-      forwarded,
-      upstreamStatus,
-      configurationRequired: !ingestUrl,
-      orderId: payload.orderId,
-      productionJobs,
-    }),
-  };
+  // The browser only needs handoff status. Avoid echoing the entire submitted
+  // production payload back across the network after every order.
+  return json(forwarded ? 202 : 200, {
+    accepted: true,
+    forwarded,
+    upstreamStatus,
+    configurationRequired: !ingestUrl,
+    orderId: payload.orderId,
+    jobCount: productionJobs.length,
+  });
 };
