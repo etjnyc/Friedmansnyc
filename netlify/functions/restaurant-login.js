@@ -1,5 +1,8 @@
 const crypto = require("crypto");
 
+let cachedCredentialsRaw = null;
+let cachedCredentials = null;
+
 function json(statusCode, body, extraHeaders = {}) {
   return {
     statusCode,
@@ -10,6 +13,19 @@ function json(statusCode, body, extraHeaders = {}) {
     },
     body: JSON.stringify(body),
   };
+}
+
+function loadCredentials(rawCredentials) {
+  if (cachedCredentials && cachedCredentialsRaw === rawCredentials) {
+    return cachedCredentials;
+  }
+
+  const parsed = JSON.parse(rawCredentials);
+  if (!Array.isArray(parsed)) throw new Error("Invalid credentials configuration");
+
+  cachedCredentialsRaw = rawCredentials;
+  cachedCredentials = parsed;
+  return parsed;
 }
 
 function signSession(record) {
@@ -48,12 +64,10 @@ exports.handler = async function handler(event) {
 
   let credentials;
   try {
-    credentials = JSON.parse(rawCredentials);
+    credentials = loadCredentials(rawCredentials);
   } catch {
     return json(500, { error: "Restaurant authentication configuration is invalid" });
   }
-
-  if (!Array.isArray(credentials)) return json(500, { error: "Restaurant authentication configuration is invalid" });
 
   const record = credentials.find((entry) => String(entry.loginId || "").toLowerCase() === loginId);
   if (!record?.salt || !record?.hash || !record?.restaurantId) {
