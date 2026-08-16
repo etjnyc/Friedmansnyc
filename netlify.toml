@@ -1,6 +1,17 @@
 [build]
   command = "npm run build"
-  publish = ".next"
+  publish = "dist"
+  ignore = "node ./scripts/netlify-ignore-build.mjs"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+[build.environment]
+  NODE_VERSION = "20"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
