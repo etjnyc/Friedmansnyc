@@ -3,6 +3,12 @@
   publish = "dist"
 
 [[redirects]]
+  from = "/portal/*"
+  to = "/friedmans-customer-preview.html?restaurant_id=:splat"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
