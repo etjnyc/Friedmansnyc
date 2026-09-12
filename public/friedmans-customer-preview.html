@@ -177,8 +177,36 @@ function renderModal(){const confirmation=modalStep===4;$("#modalEyebrow").textC
 function addToCart(){syncDraft();if(draft.size==="custom"){const width=Number(draft.customWidth),height=Number(draft.customHeight);if(!(width>0)||!(height>0)){toast("Enter both custom dimensions to continue.");return}draft.size=customSizeLabel(width,height)}cart.push(Object.assign({},draft,{productId:selectedProduct.id,name:selectedProduct.name}));releaseArtworkPreviewUrls();renderCart();closeModal();setView("new");toast(selectedProduct.name+" added to your order.");selectedProduct=null;draft={}}
 function makeOrderId(){const now=new Date(),date=String(now.getFullYear()).slice(2)+String(now.getMonth()+1).padStart(2,"0")+String(now.getDate()).padStart(2,"0"),tail=String(now.getHours()).padStart(2,"0")+String(now.getMinutes()).padStart(2,"0")+String(Math.floor(Math.random()*90)+10);return"FRD-"+date+"-"+tail}
 function buildHubOrder(orderId){return{source:"Friedmans Customer Portal",source_system:"friedmans_customer_portal",client_order_id:orderId,account:{organization_id:"friedmans-hospitality",name:"Friedmans Hospitality"},location:{id:currentLocationId,name:locationName()},requested_by:{id:"friedmans-demo-user",name:"Eddie"},billing:{mode:"account"},priority:cart.some(function(item){return item.rush})?"rush":"standard",status:"received",lines:cart.map(function(item,index){const files=item.artworkFiles||[];return{line_id:orderId+"-"+String(index+1).padStart(2,"0"),product_id:item.productId,job_name:item.name,quantity:item.quantity,finished_size:item.size,stock:item.stock,finish:item.finish,artwork_status:item.artworkMode==="existing"?"on_file":"customer_file_required",files:files.map(function(file){return file.name}),artworkAvailable:files.length>0,artworkCount:files.length,needed_by:item.neededBy||null,rush:Boolean(item.rush),production_notes:item.notes||""}}),audit:{received_at:new Date().toISOString(),idempotency_key:orderId}}}
-// Mock adapter: replace this with POST /api/v1/orders in the central hub.
-function placeOrder(){const orderId=makeOrderId(),payload=buildHubOrder(orderId);window.__lastHubOrder=payload;const order={id:orderId,status:"Received",statusKey:"received",location:locationName(),createdAt:"Just now",items:cart.map(function(item){return Object.assign({},item)})};orderHistory.unshift(order);cart=[];renderCart();renderRecent();renderAll();modalStep=4;renderConfirmation(order);renderModal()}
+const PORTAL_ORDER_ENDPOINT = "https://shulman-friedmans-integration-sandbox.etjnyc.chatgpt.site/api/v1/orders";
+// Integration adapter: this preview sends the standard order payload to the
+// isolated Shulman production-board sandbox. The central hub can take over
+// this endpoint later without changing the customer-facing order flow.
+let placingOrder = false;
+async function sendOrderToBoard(payload){
+  const response=await fetch(PORTAL_ORDER_ENDPOINT,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
+  let data=null;
+  try{data=await response.json()}catch(error){data=null}
+  if(!response.ok)throw new Error(data&&data.error?data.error:"The order could not be sent to Shulman.");
+  return data;
+}
+async function placeOrder(){
+  if(placingOrder)return;
+  placingOrder=true;
+  const button=$("#modalNext");
+  if(button)button.disabled=true;
+  const orderId=makeOrderId(),payload=buildHubOrder(orderId);
+  window.__lastHubOrder=payload;
+  try{
+    const result=await sendOrderToBoard(payload);
+    const order={id:result&&result.client_order_id?result.client_order_id:orderId,status:"Received",statusKey:"received",location:locationName(),createdAt:"Just now",items:cart.map(function(item){return Object.assign({},item)})};
+    orderHistory.unshift(order);cart=[];renderCart();renderRecent();renderAll();modalStep=4;renderConfirmation(order);renderModal();
+  }catch(error){
+    toast(error&&error.message?error.message:"The order could not be sent to Shulman. Your selection is still here.");
+  }finally{
+    placingOrder=false;
+    if(button&&modalStep===3)button.disabled=false;
+  }
+}
 function enforceLogin(){let session=null;try{session=JSON.parse(window.sessionStorage.getItem("shulman_portal_preview_session")||"null")}catch(error){session=null}const allowed=new URLSearchParams(window.location.search).get("preview_session")==="1"&&session&&session.restaurant_id===currentLocationId;if(allowed){$("#loginGate").classList.add("hidden");$("#loginGate").setAttribute("aria-hidden","true")}else{$("#loginGate").classList.remove("hidden");$("#loginGate").setAttribute("aria-hidden","false")}}$("#gateLocationSelect").addEventListener("change",function(event){currentLocationId=event.target.value;renderIdentity();renderQuick();renderRecent();renderAll()});$("#loginGateForm").addEventListener("submit",function(event){event.preventDefault();const loginId=$("#gateLoginId").value.trim(),password=$("#gatePassword").value;if(!loginId||!password){$("#loginError").textContent="Enter both your username and password to continue.";return}const selected=$("#gateLocationSelect").value;window.sessionStorage.setItem("shulman_portal_preview_session",JSON.stringify({restaurant_id:selected,username:loginId}));window.location.href="/portal/"+encodeURIComponent(selected)+"/?preview_session=1"});$("#startOrder").addEventListener("click",function(){setView("new");selectedProduct=null;openModal(1)});$("#ordersStart").addEventListener("click",function(){setView("new");selectedProduct=null;openModal(1)});$("#viewOrders").addEventListener("click",function(){setView("orders")});$("#helpStart").addEventListener("click",function(){setView("new")});$("#contactButton").addEventListener("click",function(){toast("In the final build, this will open the Shulman contact route.")});$("#accountButton").addEventListener("click",function(){toast("Account settings will live in the central hub.")});$("#closeModal").addEventListener("click",closeModal);$("#orderModal").addEventListener("click",function(event){if(event.target===event.currentTarget)closeModal()});$("#modalBack").addEventListener("click",function(){if(modalStep===2){modalStep=1;renderModal()}else if(modalStep===3){modalStep=1;selectedProduct=null;draft={};renderModal()}});$("#modalAddAnother").addEventListener("click",function(){selectedProduct=null;draft={};modalStep=1;renderModal()});$("#modalNext").addEventListener("click",function(){if(modalStep===1&&selectedProduct){modalStep=2;renderModal()}else if(modalStep===2){addToCart()}else if(modalStep===3){placeOrder()}});$("#reviewOrder").addEventListener("click",function(){modalStep=3;openModal(3)});$("#clearCart").addEventListener("click",function(){cart=[];renderCart();toast("Your selection has been cleared.")});$(".tabs").addEventListener("click",function(event){const tab=event.target.closest("[data-view]");if(tab)setView(tab.dataset.view)});$$("[data-go]").forEach(function(button){button.addEventListener("click",function(){setView(button.dataset.go)})});document.addEventListener("keydown",function(event){if(event.key==="Escape"&&!$("#orderModal").classList.contains("hidden"))closeModal()});
 renderIdentity();renderQuick();renderRecent();renderAll();renderCatalog();renderCart();enforceLogin();
 </script>
